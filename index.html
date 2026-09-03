@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Shoe Dryer — IoT Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{
+  --yellow:#FFC107;
+  --yellow-2:#FFD54F;
+  --yellow-light:#FFF8E1;
+  --dark:#1F1F1F;
+  --text:#2B2B2B;
+  --bg:#F7F7F5;
+  --white:#FFFFFF;
+  --green:#22C55E;
+  --red:#EF4444;
+  --blue:#3B82F6;
+  --border:#ECEAE4;
+  --shadow: 0 1px 2px rgba(31,31,31,.04), 0 8px 24px rgba(31,31,31,.06);
+  --radius-card:20px;
+  --radius-btn:14px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:'Prompt','Inter',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;}
+input{font-family:inherit;}
+::selection{background:var(--yellow-2);}
+ 
+a{color:inherit;text-decoration:none;}
+ 
+/* ---------- Utility ---------- */
+.hidden{display:none !important;}
+.card{
+  background:var(--white);
+  border-radius:var(--radius-card);
+  box-shadow:var(--shadow);
+  border:1px solid var(--border);
+}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.dot-green{background:var(--green);box-shadow:0 0 0 4px rgba(34,197,94,.15);}
+.dot-red{background:var(--red);box-shadow:0 0 0 4px rgba(239,68,68,.15);}
+.pulse{animation:pulse 2s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.45;}}
+.fadein{animation:fadein .35s ease both;}
+@keyframes fadein{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+ 
+/* ---------- Login / Register ---------- */
+.auth-screen{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(255,193,7,.15), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, rgba(255,213,79,.18), transparent 60%),
+    var(--bg);
+  padding:24px;
+}
+.auth-box{
+  width:100%;
+  max-width:400px;
+  background:var(--white);
+  border-radius:24px;
+  box-shadow:var(--shadow);
+  border:1px solid var(--border);
+  padding:40px 32px;
+  text-align:center;
+}
+.auth-emoji{
+  width:64px;height:64px;border-radius:18px;
+  background:var(--yellow-light);
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;margin:0 auto 18px;
+}
+.auth-title{font-size:22px;font-weight:700;letter-spacing:.2px;margin:0 0 4px;}
+.auth-sub{font-size:13.5px;color:#8a8a86;margin:0 0 28px;}
+.field{text-align:left;margin-bottom:16px;}
+.field label{font-size:13px;font-weight:500;color:#6b6b67;display:block;margin-bottom:6px;}
+.field input{
+  width:100%;padding:12px 14px;border-radius:12px;
+  border:1.5px solid var(--border);background:var(--bg);
+  font-size:14.5px;outline:none;transition:border-color .15s, background .15s;
+}
+.field input:focus{border-color:var(--yellow);background:var(--white);}
+.btn{
+  border:none;border-radius:var(--radius-btn);
+  padding:13px 20px;font-size:14.5px;font-weight:600;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease, background .15s;
+  white-space:nowrap;
+}
+.btn:active{transform:scale(.97);}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.btn-primary{background:var(--yellow);color:var(--dark);}
+.btn-primary:hover:not(:disabled){background:var(--yellow-2);box-shadow:0 6px 16px rgba(255,193,7,.35);}
+.btn-dark{background:var(--dark);color:var(--white);}
+.btn-dark:hover:not(:disabled){background:#000;}
+.btn-outline{background:var(--white);color:var(--text);border:1.5px solid var(--border);}
+.btn-outline:hover:not(:disabled){border-color:var(--dark);}
+.btn-danger-soft{background:#FEE2E2;color:#B91C1C;}
+.btn-danger-soft:hover:not(:disabled){background:#FECACA;}
+.btn-block{width:100%;}
+.link-muted{font-size:13px;color:#8a8a86;margin-top:18px;display:block;}
+.link-muted b{color:var(--text);font-weight:600;}
+ 
+/* ---------- App shell ---------- */
+.app{display:none;min-height:100vh;}
+.app.active{display:flex;}
+.sidebar{
+  width:236px;flex-shrink:0;background:var(--white);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  padding:24px 16px;position:sticky;top:0;height:100vh;
+}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px 20px;}
+.brand-emoji{font-size:22px;}
+.brand-name{font-size:14.5px;font-weight:700;line-height:1.25;}
+.brand-sub{font-size:11px;color:#9a9a95;font-weight:500;padding:0 8px 18px;border-bottom:1px solid var(--border);margin-bottom:14px;}
+.nav{display:flex;flex-direction:column;gap:2px;flex:1;}
+.nav-item{
+  display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;
+  font-size:14px;font-weight:500;color:#6b6b67;
+  border:none;background:transparent;text-align:left;width:100%;
+  transition:background .15s, color .15s;
+}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;color:#a3a39d;transition:color .15s;}
+.nav-item:hover{background:var(--bg);}
+.nav-item.active{background:var(--yellow-light);color:var(--dark);font-weight:600;}
+.nav-item.active svg{color:var(--yellow);}
+.sidebar-foot{border-top:1px solid var(--border);padding-top:14px;margin-top:10px;}
+.status-pill{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:500;color:#6b6b67;padding:8px 10px;}
+.user-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;}
+.user-row:hover{background:var(--bg);cursor:pointer;}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--yellow-light);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--dark);}
+ 
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.navbar{
+  height:66px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;position:sticky;top:0;background:rgba(247,247,245,.85);backdrop-filter:blur(8px);z-index:20;
+  border-bottom:1px solid transparent;
+}
+.navbar-left{font-size:14px;font-weight:600;color:#8a8a86;}
+.navbar-right{display:flex;align-items:center;gap:14px;}
+.hamburger{display:none;background:none;border:none;padding:8px;}
+.hamburger svg{width:22px;height:22px;}
+.bell-btn{position:relative;width:38px;height:38px;border-radius:12px;border:1px solid var(--border);background:var(--white);display:flex;align-items:center;justify-content:center;}
+.bell-btn svg{width:17px;height:17px;color:#6b6b67;}
+.bell-badge{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:9.5px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
+ 
+.page{padding:8px 28px 40px;max-width:1180px;}
+.page-head{margin:20px 0 24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.greet{font-size:13.5px;color:#8a8a86;margin:0 0 4px;font-weight:500;}
+.page-title{font-size:26px;font-weight:700;margin:0 0 6px;}
+.page-desc{font-size:14px;color:#8a8a86;margin:0;max-width:440px;}
+.online-chip{display:flex;align-items:center;gap:8px;background:var(--white);border:1px solid var(--border);padding:9px 14px;border-radius:999px;font-size:12.5px;font-weight:700;letter-spacing:.3px;}
+ 
+/* ---------- Grid layout ---------- */
+.grid{display:grid;gap:18px;}
+.grid-dash{grid-template-columns: 1.35fr 1fr;}
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;}
+@media (max-width:980px){
+  .grid-dash{grid-template-columns:1fr;}
+}
+ 
+/* ---------- Main dryer card ---------- */
+.dryer-card{padding:26px;position:relative;overflow:hidden;}
+.dryer-card::before{
+  content:"";position:absolute;top:-60px;right:-60px;width:220px;height:220px;
+  background:radial-gradient(circle, rgba(255,193,7,.16), transparent 70%);
+  pointer-events:none;
+}
+.dryer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;}
+.dryer-name{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;}
+.dryer-name .emoji{font-size:19px;}
+.conn-chip{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#6b6b67;}
+ 
+.status-badge{display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.4px;margin:0 auto 20px;}
+.status-idle{background:#EEEEEA;color:#6b6b67;}
+.status-running{background:var(--yellow-light);color:#946200;}
+.status-paused{background:#FFF0DA;color:#9A5B00;}
+.status-finished{background:#E7F8ED;color:#15803D;}
+.status-offline{background:#FEECEC;color:#B91C1C;}
+ 
+.ring-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 0 10px;}
+.ring-svg{width:220px;height:220px;}
+.ring-track{fill:none;stroke:#F0EFE9;stroke-width:10;}
+.ring-progress{fill:none;stroke:var(--yellow);stroke-width:10;stroke-linecap:round;transform-origin:center;transform:rotate(-90deg);transition:stroke-dashoffset .8s ease;}
+.ring-center{display:flex;flex-direction:column;align-items:center;}
+.ring-time{font-size:34px;font-weight:700;letter-spacing:.5px;font-variant-numeric:tabular-nums;}
+.ring-label{font-size:11px;font-weight:600;letter-spacing:1px;color:#9a9a95;margin-top:2px;}
+ 
+.dryer-sub-stats{display:flex;justify-content:center;gap:34px;margin:6px 0 22px;}
+.sub-stat{text-align:center;}
+.sub-stat .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;}
+.sub-stat .l{font-size:11px;color:#9a9a95;font-weight:500;margin-top:2px;}
+ 
+.controls-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.ctrl-btn{flex:1;min-width:120px;max-width:170px;padding:14px 18px;font-size:14.5px;}
+.ctrl-icon-btn svg{width:16px;height:16px;}
+ 
+.locked-note{display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;color:#9a9a95;margin-top:16px;}
+.locked-note svg{width:13px;height:13px;}
+ 
+/* ---------- Small stat cards ---------- */
+.mini-card{padding:20px;display:flex;flex-direction:column;gap:10px;}
+.mini-card .icon-badge{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;}
+.mini-card .icon-badge svg{width:19px;height:19px;}
+.badge-yellow{background:var(--yellow-light);color:#946200;}
+.badge-blue{background:#EAF2FF;color:var(--blue);}
+.mini-card .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;}
+.mini-card .l{font-size:12.5px;color:#8a8a86;font-weight:500;}
+.status-tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;margin-top:2px;}
+ 
+/* ---------- Connection card ---------- */
+.conn-card{padding:20px;}
+.conn-card h4{font-size:13.5px;font-weight:600;margin:0 0 14px;}
+.conn-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:#8a8a86;margin-bottom:8px;}
+.conn-row b{color:var(--text);font-weight:600;}
+.wifi-bar-bg{height:6px;border-radius:4px;background:#EFEFE9;overflow:hidden;margin:4px 0 12px;}
+.wifi-bar-fill{height:100%;background:var(--yellow);border-radius:4px;transition:width .6s ease;}
+ 
+/* ---------- Safety card ---------- */
+.safety-card{padding:20px;}
+.safety-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.safety-head h4{font-size:13.5px;font-weight:600;margin:0;}
+.safety-limit{font-size:11.5px;color:#9a9a95;font-weight:600;}
+.safety-bar-bg{height:8px;border-radius:5px;background:#EFEFE9;overflow:hidden;margin-bottom:10px;}
+.safety-bar-fill{height:100%;border-radius:5px;transition:width .6s ease, background .3s ease;}
+.safety-status{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;}
+.estop-btn{
+  width:100%;margin-top:14px;background:var(--red);color:#fff;border:none;border-radius:14px;
+  padding:13px;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.3px;
+}
+.estop-btn svg{width:16px;height:16px;}
+.estop-btn:hover{background:#DC2626;}
+ 
+/* ---------- Chart card ---------- */
+.chart-card{padding:22px;margin-top:18px;}
+.chart-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+.chart-head h4{font-size:15px;font-weight:600;margin:0;}
+.range-tabs{display:flex;gap:4px;background:var(--bg);border-radius:10px;padding:3px;}
+.range-tab{border:none;background:transparent;padding:6px 11px;font-size:11.5px;font-weight:600;border-radius:8px;color:#8a8a86;}
+.range-tab.active{background:var(--white);color:var(--dark);box-shadow:0 1px 2px rgba(0,0,0,.06);}
+.chart-holder{height:220px;}
+ 
+/* ---------- History page ---------- */
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;}
+.search-input{position:relative;flex:1;min-width:200px;}
+.search-input input{width:100%;padding:11px 14px 11px 38px;border-radius:12px;border:1.5px solid var(--border);background:var(--white);font-size:13.5px;outline:none;}
+.search-input input:focus{border-color:var(--yellow);}
+.search-input svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:#a3a39d;}
+.chip-filter{display:flex;gap:8px;}
+.chip{border:1.5px solid var(--border);background:var(--white);padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:600;color:#6b6b67;}
+.chip.active{background:var(--dark);color:#fff;border-color:var(--dark);}
+ 
+.history-table{width:100%;border-collapse:collapse;overflow:hidden;border-radius:18px;}
+.history-table thead th{text-align:left;font-size:11.5px;color:#9a9a95;font-weight:600;letter-spacing:.4px;padding:14px 18px;background:var(--bg);}
+.history-table tbody td{padding:15px 18px;font-size:13.5px;border-top:1px solid var(--border);}
+.history-table tbody tr{background:var(--white);}
+.pill-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:999px;}
+.pill-completed{background:#E7F8ED;color:#15803D;}
+.pill-stopped{background:#FFF0DA;color:#9A5B00;}
+.pill-cancelled{background:#FEECEC;color:#B91C1C;}
+ 
+/* ---------- My Dryer page ---------- */
+.device-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;}
+.device-card{padding:20px;display:flex;flex-direction:column;gap:12px;}
+.device-card-top{display:flex;align-items:center;justify-content:space-between;}
+.device-card-name{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:8px;}
+.device-stat-line{display:flex;justify-content:space-between;font-size:12.5px;color:#8a8a86;}
+.device-stat-line b{color:var(--text);font-weight:600;}
+ 
+/* ---------- Settings page ---------- */
+.settings-section{padding:22px;margin-bottom:18px;}
+.settings-section h4{font-size:14.5px;font-weight:600;margin:0 0 4px;}
+.settings-section .sec-desc{font-size:12.5px;color:#9a9a95;margin:0 0 18px;}
+.settings-field{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid var(--border);gap:16px;}
+.settings-field:first-of-type{border-top:none;}
+.settings-field .lbl{font-size:13.5px;font-weight:500;}
+.settings-field .sub{font-size:11.5px;color:#9a9a95;margin-top:2px;}
+.settings-field input[type=text],.settings-field input[type=number],.settings-field input[type=email],.settings-field input[type=password]{
+  width:220px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);font-size:13px;outline:none;text-align:right;
+}
+.settings-field input:focus{border-color:var(--yellow);background:var(--white);}
+.locked-field{width:220px;padding:9px 12px;border-radius:10px;background:var(--yellow-light);font-size:13px;text-align:right;font-weight:600;color:#946200;display:flex;align-items:center;justify-content:flex-end;gap:6px;}
+.locked-field svg{width:12px;height:12px;}
+ 
+.toggle{position:relative;width:42px;height:24px;flex-shrink:0;}
+.toggle input{opacity:0;width:0;height:0;position:absolute;}
+.toggle-track{position:absolute;inset:0;background:#E4E4DE;border-radius:999px;transition:background .2s;cursor:pointer;}
+.toggle-track::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.toggle input:checked + .toggle-track{background:var(--yellow);}
+.toggle input:checked + .toggle-track::after{transform:translateX(18px);}
+ 
+/* ---------- Modal ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(31,31,31,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;backdrop-filter:blur(2px);}
+.modal-box{background:var(--white);border-radius:22px;max-width:400px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-title{font-size:18px;font-weight:700;margin:0 0 6px;}
+.modal-desc{font-size:13.5px;color:#8a8a86;margin:0 0 22px;}
+.fixed-time-display{
+  background:var(--yellow-light);border-radius:16px;padding:22px;text-align:center;margin-bottom:22px;
+}
+.fixed-time-display .num{font-size:38px;font-weight:700;color:var(--dark);line-height:1;}
+.fixed-time-display .unit{font-size:12.5px;font-weight:600;color:#946200;margin-top:6px;letter-spacing:.3px;}
+.modal-actions{display:flex;gap:10px;}
+.modal-actions .btn{flex:1;}
+ 
+/* ---------- Notification panel ---------- */
+.notif-panel{position:absolute;top:60px;right:28px;width:320px;background:var(--white);border-radius:18px;box-shadow:0 16px 40px rgba(0,0,0,.15);border:1px solid var(--border);z-index:90;overflow:hidden;}
+.notif-panel-head{padding:16px 18px;font-size:14px;font-weight:700;border-bottom:1px solid var(--border);}
+.notif-item{display:flex;gap:10px;padding:13px 18px;border-bottom:1px solid var(--border);}
+.notif-item:last-child{border-bottom:none;}
+.notif-item .dotwrap{padding-top:5px;}
+.notif-item .txt{font-size:12.5px;}
+.notif-item .txt .t{font-weight:600;color:var(--text);}
+.notif-item .txt .time{color:#9a9a95;font-size:11px;margin-top:2px;}
+ 
+/* ---------- Skeleton ---------- */
+.skel{background:linear-gradient(90deg,#EFEFE9 25%,#F6F6F1 37%,#EFEFE9 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:8px;}
+@keyframes shimmer{0%{background-position:100% 0;}100%{background-position:0 0;}}
+ 
+/* ---------- Offline banner ---------- */
+.offline-banner{
+  display:flex;align-items:center;gap:12px;background:#FEECEC;border:1px solid #FCC;
+  padding:14px 18px;border-radius:16px;margin-bottom:20px;
+}
+.offline-banner svg{width:20px;height:20px;color:var(--red);flex-shrink:0;}
+.offline-banner .txt{flex:1;font-size:13px;}
+.offline-banner .txt b{display:block;font-size:13.5px;margin-bottom:2px;}
+.offline-banner .txt span{color:#8a8a86;}
+ 
+/* ---------- Toast ---------- */
+.toast-wrap{position:fixed;top:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:10px;}
+.toast{background:var(--dark);color:#fff;padding:13px 18px;border-radius:14px;font-size:13px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px;animation:toastin .25s ease both;max-width:320px;}
+@keyframes toastin{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
+.toast svg{width:16px;height:16px;flex-shrink:0;}
+ 
+/* ---------- Bottom nav (mobile) ---------- */
+.bottom-nav{display:none;}
+ 
+/* ---------- Responsive ---------- */
+@media (max-width:900px){
+  .sidebar{position:fixed;left:0;top:0;z-index:80;transform:translateX(-100%);transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.15);}
+  .sidebar.open{transform:translateX(0);}
+  .hamburger{display:flex;align-items:center;justify-content:center;}
+  .navbar{padding:0 16px;}
+  .page{padding:8px 16px 90px;}
+  .bottom-nav{
+    display:flex;position:fixed;bottom:0;left:0;right:0;height:64px;background:var(--white);
+    border-top:1px solid var(--border);z-index:70;justify-content:space-around;align-items:center;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .bn-item{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:#a3a39d;font-size:10px;font-weight:600;padding:6px 10px;}
+  .bn-item svg{width:20px;height:20px;}
+  .bn-item.active{color:var(--yellow);}
+  .bn-item.active svg{color:var(--yellow);}
+  .stat-row{grid-template-columns:1fr 1fr;}
+  .notif-panel{right:12px;left:12px;width:auto;}
+  .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:75;}
+}
+@media (max-width:520px){
+  .controls-row{flex-direction:column;}
+  .ctrl-btn{max-width:none;}
+  .auth-box{padding:32px 22px;}
+  .dryer-sub-stats{gap:20px;}
+}
+</style>
+</head>
+<body>
+ 
+<!-- ================= LOGIN ================= -->
+<div class="auth-screen" id="loginScreen">
+  <div class="auth-box fadein">
+    <div class="auth-emoji">👟</div>
+    <h1 class="auth-title">SMART SHOE DRYER</h1>
+    <p class="auth-sub">Smart Drying. Better Shoes.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" value="user@example.com" required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" value="••••••••" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">LOGIN</button>
+    </form>
+    <a class="link-muted" href="#" onclick="return false;">Forgot Password?</a>
+    <a class="link-muted" href="#" id="goRegister">Don't have an account? <b>Create one</b></a>
+  </div>
+</div>
+ 
+<!-- ================= REGISTER ================= -->
+<div class="auth-screen hidden" id="registerScreen">
+  <div class="auth-box fadein">
+    <div class="auth-emoji">👟</div>
+    <h1 class="auth-title" style="font-size:19px;">Create Account</h1>
+    <p class="auth-sub">Join Smart Shoe Dryer</p>
+    <form id="registerForm">
+      <div class="field"><label>Name</label><input type="text" placeholder="Your name" required></div>
+      <div class="field"><label>Email</label><input type="email" placeholder="you@example.com" required></div>
+      <div class="field"><label>Password</label><input type="password" placeholder="••••••••" required></div>
+      <div class="field"><label>Confirm Password</label><input type="password" placeholder="••••••••" required></div>
+      <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+    </form>
+    <a class="link-muted" href="#" id="goLogin">Already have an account? <b>Log in</b></a>
+  </div>
+</div>
+ 
+<!-- ================= APP ================= -->
+<div class="app" id="app">
+  <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-emoji">👟</div>
+      <div class="brand-name">SMART SHOE<br>DRYER</div>
+    </div>
+    <div class="brand-sub">IoT Control System</div>
+    <nav class="nav" id="navMenu">
+      <button class="nav-item" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-page="mydryer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15c0-1.5 1-2 2-2.5 1.5-.7 2-2 2-3.5V6l3-2 3 2v3c0 1.5.5 2.8 2 3.5 1 .5 2 1 2 2.5v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3Z"/><path d="M4 18h16"/></svg>
+        My Dryer
+      </button>
+      <button class="nav-item" data-page="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>
+        Drying History
+      </button>
+      <button class="nav-item" data-page="temperature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
+        Temperature
+      </button>
+      <button class="nav-item" data-page="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.43.53.77.6.34.07.6.33.6.68v1.44c0 .35-.26.61-.6.68-.34.07-.63.29-.77.6Z"/></svg>
+        Settings
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="status-pill"><span class="dot dot-green pulse" id="sideDot"></span><span id="sideStatusText">Device Online</span></div>
+      <div class="user-row">
+        <div class="avatar">JD</div>
+        <div style="font-size:12.5px;font-weight:600;">Jane Doe</div>
+      </div>
+    </div>
+  </aside>
+ 
+  <div class="main">
+    <div class="navbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="hamburger" id="hamburgerBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="navbar-left" id="navbarTitle">Dashboard</div>
+      </div>
+      <div class="navbar-right">
+        <button class="bell-btn" id="bellBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="bell-badge" id="bellBadge">3</span>
+        </button>
+      </div>
+    </div>
+ 
+    <div id="notifPanel" class="notif-panel hidden">
+      <div class="notif-panel-head">Notifications</div>
+      <div class="notif-item">
+        <div class="dotwrap"><span class="dot" style="background:var(--yellow)"></span></div>
+        <div class="txt"><div class="t">Drying completed</div><div class="time">5 minutes ago</div></div>
+      </div>
+      <div class="notif-item">
+        <div class="dotwrap"><span class="dot dot-green"></span></div>
+        <div class="txt"><div class="t">Dryer started</div><div class="time">35 minutes ago</div></div>
+      </div>
+      <div class="notif-item">
+        <div class="dotwrap"><span class="dot dot-red"></span></div>
+        <div class="txt"><div class="t">Device disconnected</div><div class="time">2 hours ago</div></div>
+      </div>
+    </div>
+ 
+    <!-- PAGE: DASHBOARD -->
+    <div class="page" id="page-dashboard">
+      <div class="page-head">
+        <div>
+          <p class="greet" id="greetLine">Good Evening 👋</p>
+          <h1 class="page-title">Smart Shoe Dryer Dashboard</h1>
+          <p class="page-desc">Monitor and control your shoe dryer in real-time.</p>
+        </div>
+        <div class="online-chip"><span class="dot dot-green pulse" id="chipDot"></span><span id="chipText">DEVICE ONLINE</span></div>
+      </div>
+ 
+      <div id="offlineBannerWrap"></div>
+ 
+      <div class="grid grid-dash">
+        <!-- Main dryer card -->
+        <div class="card dryer-card fadein">
+          <div class="dryer-head">
+            <div class="dryer-name"><span class="emoji">👟</span> Shoe Dryer #001</div>
+            <div class="conn-chip"><span class="dot dot-green" id="dryerConnDot"></span><span id="dryerConnText">ONLINE</span></div>
+          </div>
+ 
+          <div style="text-align:center;">
+            <span class="status-badge status-idle" id="statusBadge">IDLE</span>
+          </div>
+ 
+          <div class="ring-wrap">
+            <svg class="ring-svg" viewBox="0 0 220 220">
+              <circle class="ring-track" cx="110" cy="110" r="95"></circle>
+              <circle class="ring-progress" id="ringProgress" cx="110" cy="110" r="95" stroke-dasharray="596.9" stroke-dashoffset="596.9"></circle>
+            </svg>
+            <div class="ring-center" style="margin-top:-158px;">
+              <div class="ring-time" id="ringTime">00:00</div>
+              <div class="ring-label">REMAINING</div>
+            </div>
+          </div>
+ 
+          <div class="dryer-sub-stats">
+            <div class="sub-stat"><div class="v" id="subTemp">—</div><div class="l">Temperature</div></div>
+            <div class="sub-stat"><div class="v" id="subHumidity">—</div><div class="l">Humidity</div></div>
+          </div>
+ 
+          <div class="controls-row" id="controlsRow"></div>
+ 
+          <div class="locked-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            Drying duration is locked at 30 minutes
+          </div>
+        </div>
+ 
+        <!-- Right column -->
+        <div style="display:flex;flex-direction:column;gap:18px;">
+          <div class="stat-row" style="margin-top:0;">
+            <div class="card mini-card fadein">
+              <div class="icon-badge badge-yellow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
+              </div>
+              <div class="v" id="tempCardValue">—</div>
+              <div class="l">Current Temperature</div>
+              <div class="status-tag" id="tempStatusTag"><span class="dot dot-green"></span> Normal</div>
+            </div>
+            <div class="card mini-card fadein">
+              <div class="icon-badge badge-blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2s7 8.2 7 13a7 7 0 1 1-14 0c0-4.8 7-13 7-13Z"/></svg>
+              </div>
+              <div class="v" id="humCardValue">—</div>
+              <div class="l">Humidity</div>
+              <div class="status-tag" style="color:#8a8a86;"><span></span>DHT22 sensor</div>
+            </div>
+          </div>
+ 
+          <div class="card conn-card fadein">
+            <h4>Device Connection</h4>
+            <div class="conn-row"><span>Status</span><b id="connStatusText" style="color:var(--green);">● Online</b></div>
+            <div style="font-size:11.5px;color:#9a9a95;margin-bottom:4px;">Wi-Fi Signal</div>
+            <div class="wifi-bar-bg"><div class="wifi-bar-fill" id="wifiBar" style="width:82%;"></div></div>
+            <div class="conn-row" style="margin-bottom:0;"><span>Last Update</span><b id="lastUpdateText">Just now</b></div>
+          </div>
+ 
+          <div class="card safety-card fadein">
+            <div class="safety-head">
+              <h4>Temperature Safety Limit</h4>
+              <span class="safety-limit">Limit: 45°C</span>
+            </div>
+            <div class="safety-bar-bg"><div class="safety-bar-fill" id="safetyBar" style="width:0%;background:var(--green);"></div></div>
+            <div class="safety-status" id="safetyStatus"><span class="dot dot-green"></span> Safe</div>
+            <button class="estop-btn" id="estopBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              EMERGENCY STOP
+            </button>
+          </div>
+        </div>
+      </div>
+ 
+      <!-- Temperature graph -->
+      <div class="card chart-card fadein">
+        <div class="chart-head">
+          <h4>Temperature History</h4>
+          <div class="range-tabs">
+            <button class="range-tab active" data-range="10">10 min</button>
+            <button class="range-tab" data-range="30">30 min</button>
+            <button class="range-tab" data-range="60">1 hour</button>
+            <button class="range-tab" data-range="today">Today</button>
+          </div>
+        </div>
+        <div class="chart-holder"><canvas id="tempChart"></canvas></div>
+      </div>
+    </div>
+ 
+    <!-- PAGE: MY DRYER -->
+    <div class="page hidden" id="page-mydryer">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">My Dryer</h1>
+          <p class="page-desc">All shoe dryers connected to your account.</p>
+        </div>
+      </div>
+      <div class="device-grid" id="deviceGrid"></div>
+    </div>
+ 
+    <!-- PAGE: HISTORY -->
+    <div class="page hidden" id="page-history">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Drying History</h1>
+          <p class="page-desc">A record of every drying cycle for your devices.</p>
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="search-input">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="historySearch" placeholder="Search by date...">
+        </div>
+        <div class="chip-filter" id="historyFilters">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="Completed">Completed</button>
+          <button class="chip" data-filter="Stopped">Stopped</button>
+          <button class="chip" data-filter="Cancelled">Cancelled</button>
+        </div>
+      </div>
+      <div class="card" style="overflow:hidden;">
+        <table class="history-table">
+          <thead><tr><th>Date</th><th>Duration</th><th>Temperature</th><th>Status</th></tr></thead>
+          <tbody id="historyTbody"></tbody>
+        </table>
+      </div>
+    </div>
+ 
+    <!-- PAGE: TEMPERATURE -->
+    <div class="page hidden" id="page-temperature">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Temperature</h1>
+          <p class="page-desc">Live thermal readings from Shoe Dryer #001.</p>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="card mini-card fadein">
+          <div class="icon-badge badge-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg></div>
+          <div class="v" id="tempPageValue">—</div>
+          <div class="l">Current Temperature</div>
+          <div class="status-tag" id="tempPageTag"><span class="dot dot-green"></span> Normal</div>
+        </div>
+        <div class="card mini-card fadein">
+          <div class="icon-badge badge-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2s7 8.2 7 13a7 7 0 1 1-14 0c0-4.8 7-13 7-13Z"/></svg></div>
+          <div class="v" id="humPageValue">—</div>
+          <div class="l">Humidity</div>
+          <div class="status-tag" style="color:#8a8a86;">DHT22 sensor</div>
+        </div>
+      </div>
+      <div class="card chart-card fadein">
+        <div class="chart-head"><h4>Temperature History</h4></div>
+        <div class="chart-holder"><canvas id="tempChart2"></canvas></div>
+      </div>
+    </div>
+ 
+    <!-- PAGE: SETTINGS -->
+    <div class="page hidden" id="page-settings">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Settings</h1>
+          <p class="page-desc">Manage your device and account preferences.</p>
+        </div>
+      </div>
+ 
+      <div class="card settings-section fadein">
+        <h4>Device Settings</h4>
+        <p class="sec-desc">Configuration for Shoe Dryer #001</p>
+        <div class="settings-field"><div class="lbl">Device Name</div><input type="text" value="Shoe Dryer #001"></div>
+        <div class="settings-field"><div class="lbl">Device ID</div><input type="text" value="shoe-dryer-001" disabled style="opacity:.6;"></div>
+        <div class="settings-field"><div class="lbl">Temperature Limit</div><input type="number" value="45"></div>
+        <div class="settings-field">
+          <div>
+            <div class="lbl">Default Drying Time</div>
+            <div class="sub">Fixed at 30 minutes per cycle</div>
+          </div>
+          <div class="locked-field">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            30 min
+          </div>
+        </div>
+      </div>
+ 
+      <div class="card settings-section fadein">
+        <h4>Notification Settings</h4>
+        <p class="sec-desc">Choose what you want to be notified about</p>
+        <div class="settings-field"><div class="lbl">Drying Completed</div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
+        <div class="settings-field"><div class="lbl">High Temperature</div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
+        <div class="settings-field"><div class="lbl">Device Offline</div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
+        <div class="settings-field"><div class="lbl">Drying Started</div><label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label></div>
+      </div>
+ 
+      <div class="card settings-section fadein">
+        <h4>Account</h4>
+        <p class="sec-desc">Your personal information</p>
+        <div class="settings-field"><div class="lbl">Name</div><input type="text" value="Jane Doe"></div>
+        <div class="settings-field"><div class="lbl">Email</div><input type="email" value="user@example.com"></div>
+        <div class="settings-field"><div class="lbl">Password</div><input type="password" value="••••••••"></div>
+        <div class="settings-field">
+          <div class="lbl">Log out of your account</div>
+          <button class="btn btn-danger-soft" id="logoutBtn">Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- Bottom nav mobile -->
+  <div class="bottom-nav" id="bottomNav">
+    <button class="bn-item" data-page="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Home</button>
+    <button class="bn-item" data-page="mydryer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15c0-1.5 1-2 2-2.5 1.5-.7 2-2 2-3.5V6l3-2 3 2v3c0 1.5.5 2.8 2 3.5 1 .5 2 1 2 2.5v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3Z"/></svg>Dryer</button>
+    <button class="bn-item" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>History</button>
+    <button class="bn-item" data-page="temperature"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>Temp</button>
+    <button class="bn-item" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82"/></svg>Settings</button>
+  </div>
+</div>
+ 
+<!-- Start drying modal -->
+<div class="modal-overlay hidden" id="startModal">
+  <div class="modal-box fadein">
+    <h3 class="modal-title">Start Drying</h3>
+    <p class="modal-desc">Your shoe dryer runs a fixed 30-minute cycle for consistent, safe results.</p>
+    <div class="fixed-time-display">
+      <div class="num">30</div>
+      <div class="unit">MINUTES · FIXED CYCLE</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="cancelStartBtn">Cancel</button>
+      <button class="btn btn-primary" id="confirmStartBtn">Start Drying</button>
+    </div>
+  </div>
+</div>
+ 
+<div class="toast-wrap" id="toastWrap"></div>
+ 
+<script>
+(function(){
+  "use strict";
+ 
+  /* ===================== CONFIG — fill these in to go live =====================
+     HiveMQ Cloud connection details. The browser talks to HiveMQ directly over
+     MQTT-over-WebSocket (port 8884) — no backend server needed.
+  */
+  const CONFIG = {
+    DEMO_MODE: false,                                             // true = fake data in-browser · false = connect to real HiveMQ/ESP32
+    MQTT_HOST: "00dbe25634fc4525af4192273723e80b.s1.eu.hivemq.cloud", // your HiveMQ Cluster URL, no wss:// prefix
+    MQTT_PORT: 8884,                                              // HiveMQ Cloud's WebSocket TLS port (fixed)
+    MQTT_USERNAME: "WEB_MQTT_USERNAME",                           // fill in — separate credential for the website, see chat
+    MQTT_PASSWORD: "WEB_MQTT_PASSWORD",                           // fill in
+    DEVICE_ID: "dryer01",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
+  };
+ 
+  /* ===================== STATE ===================== */
+  const TOTAL_TIME = 1800; // fixed 30 minutes, in seconds — ESP32 owns this timer
+  const SAFETY_LIMIT = 45;
+ 
+  const state = {
+    status: "idle", // idle | running | paused | finished | offline
+    temperature: 27.4,
+    humidity: 48,
+    remaining: TOTAL_TIME,
+    online: true,
+    wifi: 82,
+    lastUpdateSeconds: 0,
+    tempSeries: [],
+    range: "10",
+  };
+ 
+  let history = [
+    {date:"Aug 31", duration:"30 min", temp:"42.5°C", status:"Completed"},
+    {date:"Aug 30", duration:"20 min", temp:"40.8°C", status:"Completed"},
+    {date:"Aug 29", duration:"30 min", temp:"43.2°C", status:"Stopped"},
+    {date:"Aug 28", duration:"30 min", temp:"41.1°C", status:"Completed"},
+    {date:"Aug 27", duration:"10 min", temp:"36.4°C", status:"Cancelled"},
+  ];
+ 
+  let simInterval = null;    // demo-mode fake data loop
+  let mqttClient = null;     // real-mode MQTT.js client (connects straight to HiveMQ)
+ 
+  const TOPIC_STATUS       = "shoe-dryer/" + CONFIG.DEVICE_ID + "/status";
+  const TOPIC_COMMAND      = "shoe-dryer/" + CONFIG.DEVICE_ID + "/command";
+  const TOPIC_NOTIFICATION = "shoe-dryer/" + CONFIG.DEVICE_ID + "/notification";
+ 
+  /* ===================== HELPERS ===================== */
+  function fmtTime(sec){
+    const m = Math.floor(sec/60).toString().padStart(2,"0");
+    const s = Math.floor(sec%60).toString().padStart(2,"0");
+    return m+":"+s;
+  }
+  function el(id){ return document.getElementById(id); }
+  function showToast(msg, icon){
+    const wrap = el("toastWrap");
+    const t = document.createElement("div");
+    t.className = "toast";
+    t.innerHTML = (icon||"") + "<span>"+msg+"</span>";
+    wrap.appendChild(t);
+    setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateX(30px)"; t.style.transition="all .3s"; setTimeout(()=>t.remove(),300); }, 3200);
+  }
+  const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#22C55E"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>';
+  const ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#FFC107"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
+ 
+  /* ===================== NAVIGATION ===================== */
+  const pages = ["dashboard","mydryer","history","temperature","settings"];
+  const titles = {dashboard:"Dashboard", mydryer:"My Dryer", history:"Drying History", temperature:"Temperature", settings:"Settings"};
+ 
+  function goToPage(page){
+    pages.forEach(p=>{
+      el("page-"+p).classList.toggle("hidden", p!==page);
+    });
+    document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active", b.dataset.page===page));
+    document.querySelectorAll(".bn-item").forEach(b=>b.classList.toggle("active", b.dataset.page===page));
+    el("navbarTitle").textContent = titles[page];
+    closeSidebar();
+    if(page==="temperature"){ renderChart2(); }
+  }
+  document.querySelectorAll(".nav-item, .bn-item").forEach(btn=>{
+    btn.addEventListener("click", ()=>goToPage(btn.dataset.page));
+  });
+ 
+  function openSidebar(){ el("sidebar").classList.add("open"); el("sidebarOverlay").classList.remove("hidden"); }
+  function closeSidebar(){ el("sidebar").classList.remove("open"); el("sidebarOverlay").classList.add("hidden"); }
+  el("hamburgerBtn").addEventListener("click", openSidebar);
+  el("sidebarOverlay").addEventListener("click", closeSidebar);
+ 
+  /* ===================== AUTH ===================== */
+  el("loginForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    el("loginScreen").classList.add("hidden");
+    el("app").classList.add("active");
+    try{
+      goToPage("dashboard");
+      startApp();
+      setTimeout(()=>showToast("Welcome back, Jane 👋"), 600);
+    }catch(err){
+      console.error("Startup error:", err);
+    }
+  });
+  el("registerForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    el("registerScreen").classList.add("hidden");
+    el("loginScreen").classList.remove("hidden");
+    showToast("Account created — please log in", ICON_CHECK);
+  });
+  el("goRegister").addEventListener("click", function(e){
+    e.preventDefault();
+    el("loginScreen").classList.add("hidden");
+    el("registerScreen").classList.remove("hidden");
+  });
+  el("goLogin").addEventListener("click", function(e){
+    e.preventDefault();
+    el("registerScreen").classList.add("hidden");
+    el("loginScreen").classList.remove("hidden");
+  });
+  el("logoutBtn").addEventListener("click", function(){
+    el("app").classList.remove("active");
+    el("loginScreen").classList.remove("hidden");
+    stopApp();
+  });
+ 
+  /* ===================== NOTIFICATIONS ===================== */
+  el("bellBtn").addEventListener("click", function(e){
+    e.stopPropagation();
+    el("notifPanel").classList.toggle("hidden");
+  });
+  document.addEventListener("click", function(e){
+    if(!el("notifPanel").contains(e.target) && e.target!==el("bellBtn")){
+      el("notifPanel").classList.add("hidden");
+    }
+  });
+ 
+  /* ===================== RING PROGRESS ===================== */
+  const RING_CIRC = 2 * Math.PI * 95;
+ 
+  function updateRing(){
+    const pct = state.status==="idle" ? 0 : (TOTAL_TIME - state.remaining) / TOTAL_TIME;
+    const offset = RING_CIRC * (1 - pct);
+    el("ringProgress").style.strokeDashoffset = offset;
+    el("ringTime").textContent = fmtTime(state.remaining);
+  }
+ 
+  /* ===================== STATUS BADGE / CONTROLS ===================== */
+  function statusBadgeClass(s){
+    return {idle:"status-idle", running:"status-running", paused:"status-paused", finished:"status-finished", offline:"status-offline"}[s];
+  }
+  function statusLabel(s){
+    return {idle:"IDLE", running:"RUNNING", paused:"PAUSED", finished:"FINISHED", offline:"OFFLINE"}[s];
+  }
+ 
+  function renderControls(){
+    const row = el("controlsRow");
+    row.innerHTML = "";
+    const mk = (cls, label, iconSvg, handler, extra)=>{
+      const b = document.createElement("button");
+      b.className = "btn ctrl-btn ctrl-icon-btn " + cls;
+      b.innerHTML = iconSvg + "<span>"+label+"</span>";
+      b.addEventListener("click", handler);
+      if(extra) Object.assign(b, extra);
+      row.appendChild(b);
+      return b;
+    };
+    const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    const PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>';
+    const STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>';
+ 
+    if(!state.online){
+      mk("btn-outline", "Offline", STOP, ()=>{}, {disabled:true});
+      return;
+    }
+    if(state.status==="idle" || state.status==="finished"){
+      mk("btn-primary", "Start Drying", PLAY, ()=>el("startModal").classList.remove("hidden"));
+    } else if(state.status==="running"){
+      mk("btn-dark", "Pause", PAUSE, pauseDrying);
+      mk("btn-danger-soft", "Stop", STOP, ()=>stopDrying("Stopped"));
+    } else if(state.status==="paused"){
+      mk("btn-primary", "Resume", PLAY, resumeDrying);
+      mk("btn-danger-soft", "Stop", STOP, ()=>stopDrying("Stopped"));
+    }
+  }
+ 
+  // In real mode, the site never guesses state — it sends a command and waits
+  // for the ESP32's own status message (via HiveMQ) to confirm it.
+  function sendCommand(command){
+    if(!mqttClient || !mqttClient.connected){
+      showToast("Not connected to device", ICON_WARN);
+      return;
+    }
+    mqttClient.publish(TOPIC_COMMAND, JSON.stringify({ command }));
+  }
+ 
+  function startDrying(){
+    el("startModal").classList.add("hidden");
+    if(CONFIG.DEMO_MODE){
+      state.status = "running";
+      state.remaining = TOTAL_TIME;
+      showToast("Drying started · 30 min cycle", ICON_CHECK);
+      render();
+    } else {
+      sendCommand("start");
+      showToast("Start command sent to device", ICON_CHECK);
+    }
+  }
+  function pauseDrying(){
+    if(CONFIG.DEMO_MODE){ state.status = "paused"; showToast("Drying paused"); render(); }
+    else { sendCommand("pause"); showToast("Pause command sent"); }
+  }
+  function resumeDrying(){
+    if(CONFIG.DEMO_MODE){ state.status = "running"; showToast("Drying resumed"); render(); }
+    else { sendCommand("resume"); showToast("Resume command sent"); }
+  }
+  function stopDrying(reason){
+    if(CONFIG.DEMO_MODE){ state.status = "idle"; state.remaining = TOTAL_TIME; showToast("Drying stopped"); render(); }
+    else { sendCommand("stop"); showToast("Stop command sent"); }
+  }
+  // Only used by the demo simulator — in real mode "finished" comes from the
+  // device's own status payload and is handled in the MQTT onmessage handler.
+  function finishDrying(){
+    state.status = "finished";
+    showToast("Drying complete — shoes are ready! 🔔", ICON_CHECK);
+    render();
+    setTimeout(()=>{ if(state.status==="finished"){ state.status="idle"; state.remaining=TOTAL_TIME; render(); } }, 6000);
+  }
+ 
+  el("cancelStartBtn").addEventListener("click", ()=>el("startModal").classList.add("hidden"));
+  el("confirmStartBtn").addEventListener("click", startDrying);
+  el("estopBtn").addEventListener("click", function(){
+    if(state.status==="running" || state.status==="paused"){
+      stopDrying("Stopped");
+      showToast("Emergency stop triggered", ICON_WARN);
+    }
+  });
+ 
+  /* ===================== SAFETY / TEMP STATUS ===================== */
+  function tempCategory(t){
+    if(t < 38) return {label:"Normal", color:"var(--green)"};
+    if(t < 43) return {label:"Warm", color:"var(--yellow)"};
+    if(t < 45) return {label:"High", color:"#F59E0B"};
+    return {label:"Critical", color:"var(--red)"};
+  }
+ 
+  /* ===================== RENDER ===================== */
+  function render(){
+    // connection
+    el("chipDot").className = "dot pulse " + (state.online ? "dot-green" : "dot-red");
+    el("chipText").textContent = state.online ? "DEVICE ONLINE" : "DEVICE OFFLINE";
+    el("sideDot").className = "dot pulse " + (state.online ? "dot-green" : "dot-red");
+    el("sideStatusText").textContent = state.online ? "Device Online" : "Device Offline";
+    el("dryerConnDot").className = "dot " + (state.online ? "dot-green" : "dot-red");
+    el("dryerConnText").textContent = state.online ? "ONLINE" : "OFFLINE";
+    el("connStatusText").innerHTML = state.online ? "● Online" : "● Offline";
+    el("connStatusText").style.color = state.online ? "var(--green)" : "var(--red)";
+    el("wifiBar").style.width = state.online ? state.wifi+"%" : "0%";
+    el("lastUpdateText").textContent = state.online ? (state.lastUpdateSeconds<3 ? "Just now" : state.lastUpdateSeconds+"s ago") : "2 minutes ago";
+ 
+    el("offlineBannerWrap").innerHTML = state.online ? "" : `
+      <div class="offline-banner fadein">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+        <div class="txt"><b>Device Offline</b><span>Unable to communicate with Shoe Dryer #001. Last seen 2 minutes ago.</span></div>
+        <button class="btn btn-outline" id="retryBtn">Retry Connection</button>
+      </div>`;
+    if(!state.online){
+      el("retryBtn").addEventListener("click", ()=>{
+        if(CONFIG.DEMO_MODE){
+          state.online = true;
+          showToast("Reconnected to device", ICON_CHECK);
+          render();
+        } else {
+          showToast("Retrying connection…");
+          if(mqttClient){ mqttClient.end(true); mqttClient = null; }
+          connectMqtt();
+        }
+      });
+    }
+ 
+    // status badge
+    const badge = el("statusBadge");
+    badge.className = "status-badge " + statusBadgeClass(state.status);
+    badge.textContent = statusLabel(state.status);
+ 
+    updateRing();
+ 
+    const tc = tempCategory(state.temperature);
+    el("subTemp").textContent = state.temperature.toFixed(1)+"°C";
+    el("subHumidity").textContent = Math.round(state.humidity)+"%";
+    el("tempCardValue").textContent = state.temperature.toFixed(1)+"°C";
+    el("humCardValue").textContent = Math.round(state.humidity)+"%";
+    el("tempPageValue").textContent = state.temperature.toFixed(1)+"°C";
+    el("humPageValue").textContent = Math.round(state.humidity)+"%";
+    [el("tempStatusTag"), el("tempPageTag")].forEach(tag=>{
+      tag.innerHTML = `<span class="dot" style="background:${tc.color}"></span> ${tc.label}`;
+      tag.style.color = tc.color;
+    });
+ 
+    // safety
+    const pct = Math.min(100, (state.temperature/SAFETY_LIMIT)*100);
+    const sb = el("safetyBar");
+    sb.style.width = pct+"%";
+    const sColor = state.temperature>=SAFETY_LIMIT ? "var(--red)" : (state.temperature>=43 ? "#F59E0B" : "var(--green)");
+    sb.style.background = sColor;
+    const st = el("safetyStatus");
+    if(state.temperature>=SAFETY_LIMIT){
+      st.innerHTML = `<span class="dot dot-red"></span> HIGH TEMPERATURE — dryer may stop automatically`;
+      st.style.color = "var(--red)";
+    } else {
+      st.innerHTML = `<span class="dot dot-green"></span> Safe`;
+      st.style.color = "var(--green)";
+    }
+ 
+    renderControls();
+    renderDeviceGrid();
+  }
+ 
+  /* ===================== DEVICE GRID ===================== */
+  function renderDeviceGrid(){
+    const grid = el("deviceGrid");
+    grid.innerHTML = `
+      <div class="card device-card fadein">
+        <div class="device-card-top">
+          <div class="device-card-name">👟 Shoe Dryer #001</div>
+          <span class="dot ${state.online?'dot-green':'dot-red'}"></span>
+        </div>
+        <div class="device-stat-line"><span>Status</span><b>${state.online?'Online':'Offline'}</b></div>
+        <div class="device-stat-line"><span>Temperature</span><b>${state.temperature.toFixed(1)}°C</b></div>
+        <div class="device-stat-line"><span>Cycle</span><b>${statusLabel(state.status)}</b></div>
+        <button class="btn btn-primary btn-block" onclick="window.__goDash()">Open Dashboard</button>
+      </div>
+      <div class="card device-card fadein" style="opacity:.55;">
+        <div class="device-card-top">
+          <div class="device-card-name">👟 Shoe Dryer #002</div>
+          <span class="dot dot-red"></span>
+        </div>
+        <div class="device-stat-line"><span>Status</span><b>Not connected</b></div>
+        <div class="device-stat-line"><span>Temperature</span><b>—</b></div>
+        <div class="device-stat-line"><span>Cycle</span><b>—</b></div>
+        <button class="btn btn-outline btn-block" disabled>Add Device</button>
+      </div>`;
+  }
+  window.__goDash = ()=>goToPage("dashboard");
+ 
+  /* ===================== HISTORY TABLE ===================== */
+  function renderHistory(){
+    const activeFilter = document.querySelector(".chip.active").dataset.filter;
+    const q = el("historySearch").value.trim().toLowerCase();
+    const rows = history.filter(h=>{
+      const matchFilter = activeFilter==="all" || h.status===activeFilter;
+      const matchQ = !q || h.date.toLowerCase().includes(q);
+      return matchFilter && matchQ;
+    });
+    const pillClass = {Completed:"pill-completed", Stopped:"pill-stopped", Cancelled:"pill-cancelled"};
+    el("historyTbody").innerHTML = rows.map(h=>`
+      <tr><td>${h.date}</td><td>${h.duration}</td><td>${h.temp}</td>
+      <td><span class="pill-status ${pillClass[h.status]}">${h.status}</span></td></tr>`
+    ).join("") || `<tr><td colspan="4" style="text-align:center;color:#9a9a95;padding:30px;">No records found</td></tr>`;
+  }
+  el("historySearch").addEventListener("input", renderHistory);
+  el("historyFilters").addEventListener("click", function(e){
+    const btn = e.target.closest(".chip");
+    if(!btn) return;
+    document.querySelectorAll("#historyFilters .chip").forEach(c=>c.classList.remove("active"));
+    btn.classList.add("active");
+    renderHistory();
+  });
+ 
+  /* ===================== CHART ===================== */
+  let chart1, chart2;
+  function seedSeries(){
+    const now = Date.now();
+    state.tempSeries = [];
+    for(let i=20;i>=0;i--){
+      state.tempSeries.push({t: now - i*60000, v: 27 + Math.random()*2});
+    }
+  }
+  function chartConfig(canvasId){
+    return {
+      type:"line",
+      data:{
+        labels: state.tempSeries.map(p=>new Date(p.t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})),
+        datasets:[{
+          data: state.tempSeries.map(p=>p.v.toFixed(1)),
+          borderColor:"#FFC107",
+          backgroundColor:"rgba(255,193,7,.12)",
+          borderWidth:2.5,
+          pointRadius:0,
+          tension:.35,
+          fill:true,
+        }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{display:false}, ticks:{color:"#9a9a95", font:{size:10}, maxTicksLimit:6}},
+          y:{grid:{color:"#F0EFE9"}, ticks:{color:"#9a9a95", font:{size:10}}, suggestedMin:20, suggestedMax:50}
+        }
+      }
+    };
+  }
+  function renderChart(){
+    if(typeof Chart === "undefined") return; // Chart.js CDN unavailable — skip gracefully
+    try{
+      if(chart1) chart1.destroy();
+      chart1 = new Chart(el("tempChart").getContext("2d"), chartConfig());
+    }catch(err){ console.warn("Chart render skipped:", err); }
+  }
+  function renderChart2(){
+    if(typeof Chart === "undefined") return;
+    try{
+      if(chart2) chart2.destroy();
+      chart2 = new Chart(el("tempChart2").getContext("2d"), chartConfig());
+    }catch(err){ console.warn("Chart render skipped:", err); }
+  }
+  document.querySelectorAll(".range-tab").forEach(t=>{
+    t.addEventListener("click", function(){
+      document.querySelectorAll(".range-tab").forEach(x=>x.classList.remove("active"));
+      t.classList.add("active");
+      state.range = t.dataset.range;
+    });
+  });
+ 
+  /* ===================== SIMULATION LOOP (demo mode only) ===================== */
+  function tick(){
+    state.lastUpdateSeconds += 1;
+    if(state.lastUpdateSeconds > 2) state.lastUpdateSeconds = 3;
+ 
+    // simulate wifi jitter
+    state.wifi = Math.max(40, Math.min(98, state.wifi + (Math.random()-0.5)*4));
+ 
+    if(state.status==="running"){
+      // temperature ramps toward ~42.5°C then hovers, with slight noise
+      const target = 42.5;
+      state.temperature += (target - state.temperature) * 0.08 + (Math.random()-0.5)*0.3;
+      state.humidity += (30 - state.humidity) * 0.05 + (Math.random()-0.5)*1;
+      state.remaining = Math.max(0, state.remaining - 1);
+      if(state.remaining <= 0){
+        finishDrying();
+      }
+    } else if(state.status==="idle" || state.status==="finished"){
+      state.temperature += (27 - state.temperature) * 0.05 + (Math.random()-0.5)*0.15;
+      state.humidity += (48 - state.humidity) * 0.05 + (Math.random()-0.5)*0.5;
+    }
+    state.humidity = Math.max(20, Math.min(70, state.humidity));
+ 
+    // push to chart series once per ~3 ticks to keep it readable
+    if(state.lastUpdateSeconds % 3 === 0 || state.tempSeries.length===0){
+      state.tempSeries.push({t: Date.now(), v: state.temperature});
+      if(state.tempSeries.length > 24) state.tempSeries.shift();
+      if(chart1){
+        chart1.data.labels = state.tempSeries.map(p=>new Date(p.t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+        chart1.data.datasets[0].data = state.tempSeries.map(p=>p.v.toFixed(1));
+        chart1.update("none");
+      }
+      if(chart2 && !el("page-temperature").classList.contains("hidden")){
+        chart2.data.labels = chart1 ? chart1.data.labels : [];
+        chart2.data.datasets[0].data = chart1 ? chart1.data.datasets[0].data : [];
+        chart2.update("none");
+      }
+    }
+ 
+    render();
+  }
+ 
+  function startApp(){
+    seedSeries();
+    updateGreeting();
+    state.online = CONFIG.DEMO_MODE; // real mode shows "connecting" until a status message actually arrives
+    render();          // core dashboard (status, ring, controls) always renders first
+    renderChart();      // chart is best-effort and never blocks the app
+ 
+    if(CONFIG.DEMO_MODE){
+      simInterval = setInterval(tick, 1000);
+    } else {
+      connectMqtt();
+      // keep "Last Update" ticking and the UI fresh even between messages
+      simInterval = setInterval(()=>{ state.lastUpdateSeconds++; render(); }, 1000);
+    }
+  }
+  function stopApp(){
+    clearInterval(simInterval);
+    simInterval = null;
+    if(mqttClient){ mqttClient.end(true); mqttClient = null; }
+  }
+ 
+  /* ===================== REAL MODE — MQTT.js ↔ HiveMQ Cloud (direct, no backend) ===================== */
+  function connectMqtt(){
+    if(typeof mqtt === "undefined"){
+      console.error("mqtt.js failed to load");
+      showToast("Failed to load MQTT library", ICON_WARN);
+      return;
+    }
+    const url = "wss://" + CONFIG.MQTT_HOST + ":" + CONFIG.MQTT_PORT + "/mqtt";
+    mqttClient = mqtt.connect(url, {
+      username: CONFIG.MQTT_USERNAME,
+      password: CONFIG.MQTT_PASSWORD,
+      clientId: "web-" + Math.random().toString(16).slice(2),
+      reconnectPeriod: 2000, // mqtt.js handles reconnect/backoff itself
+      connectTimeout: 8000,
+    });
+ 
+    mqttClient.on("connect", () => {
+      showToast("Connected to " + CONFIG.DEVICE_ID, ICON_CHECK);
+      mqttClient.subscribe(TOPIC_STATUS);
+      mqttClient.subscribe(TOPIC_NOTIFICATION);
+      // device may still be offline even if the broker connection is up —
+      // state.online only flips true once an actual status message arrives.
+      render();
+    });
+ 
+    mqttClient.on("message", (topic, payload) => {
+      let msg;
+      try{ msg = JSON.parse(payload.toString()); }catch(err){ return; }
+ 
+      if(topic === TOPIC_NOTIFICATION){
+        if(msg.type === "drying_complete"){ showToast("Drying complete — shoes are ready! 🔔", ICON_CHECK); }
+        else if(msg.type === "high_temperature"){ showToast("Stopped automatically: over safety limit", ICON_WARN); }
+        else if(msg.type === "drying_started"){ showToast("Drying started · 30 min cycle", ICON_CHECK); }
+        return;
+      }
+ 
+      if(topic !== TOPIC_STATUS) return;
+      if(msg.deviceId && msg.deviceId !== CONFIG.DEVICE_ID) return; // ignore other devices
+ 
+      if(typeof msg.temperature === "number") state.temperature = msg.temperature;
+      if(typeof msg.humidity === "number") state.humidity = msg.humidity;
+      if(typeof msg.remaining === "number") state.remaining = msg.remaining;
+      if(typeof msg.wifi === "number") state.wifi = Math.max(0, Math.min(100, 100 + msg.wifi)); // rough RSSI(dBm) -> %
+      if(msg.status) state.status = msg.status;
+      state.online = true;
+      state.lastUpdateSeconds = 0;
+ 
+      state.tempSeries.push({t: Date.now(), v: state.temperature});
+      if(state.tempSeries.length > 24) state.tempSeries.shift();
+      if(chart1){
+        chart1.data.labels = state.tempSeries.map(p=>new Date(p.t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+        chart1.data.datasets[0].data = state.tempSeries.map(p=>p.v.toFixed(1));
+        chart1.update("none");
+      }
+ 
+      render();
+    });
+ 
+    mqttClient.on("close", () => {
+      state.online = false;
+      render();
+    });
+ 
+    mqttClient.on("error", (err) => {
+      console.warn("MQTT error:", err);
+    });
+  }
+ 
+  function updateGreeting(){
+    const h = new Date().getHours();
+    const g = h<12 ? "Good Morning" : (h<18 ? "Good Afternoon" : "Good Evening");
+    el("greetLine").textContent = g + " 👋";
+  }
+ 
+  /* ===================== INIT ===================== */
+  renderHistory();
+  window.addEventListener("resize", ()=>{ if(chart1) chart1.resize(); if(chart2) chart2.resize(); });
+})();
+</script>
+</body>
+</html>
