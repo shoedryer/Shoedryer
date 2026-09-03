@@ -388,12 +388,13 @@ a{color:inherit;text-decoration:none;}
     <form id="loginForm">
       <div class="field">
         <label>Email</label>
-        <input type="email" value="user@example.com" required>
+        <input type="email" id="loginEmail" value="" placeholder="you@example.com" required>
       </div>
       <div class="field">
         <label>Password</label>
-        <input type="password" value="••••••••" required>
+        <input type="password" id="loginPassword" value="" placeholder="••••••••" required>
       </div>
+      <div id="loginError" class="hidden" style="color:var(--red);font-size:12.5px;font-weight:600;margin:-8px 0 14px;"></div>
       <button type="submit" class="btn btn-primary btn-block">LOGIN</button>
     </form>
     <a class="link-muted" href="#" onclick="return false;">Forgot Password?</a>
@@ -755,9 +756,17 @@ a{color:inherit;text-decoration:none;}
     DEMO_MODE: false,                                             // true = fake data in-browser · false = connect to real HiveMQ/ESP32
     MQTT_HOST: "00dbe25634fc4525af4192273723e80b.s1.eu.hivemq.cloud", // your HiveMQ Cluster URL, no wss:// prefix
     MQTT_PORT: 8884,                                              // HiveMQ Cloud's WebSocket TLS port (fixed)
-    MQTT_USERNAME: "test",                           // fill in — separate credential for the website, see chat
-    MQTT_PASSWORD: "testtest",                           // fill in
-    DEVICE_ID: "shoe-dryer-001",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
+    MQTT_USERNAME: "WEB_MQTT_USERNAME",                           // fill in — separate credential for the website, see chat
+    MQTT_PASSWORD: "WEB_MQTT_PASSWORD",                           // fill in
+    DEVICE_ID: "dryer01",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
+  };
+
+  // Login check — this runs in the browser, so it's a convenience gate, not real security
+  // (anyone who reads the page source can see these values). Change them to your own.
+  // If you need real security later, this needs a backend to check credentials instead.
+  const AUTH = {
+    email: "admin@shoedryer.local",
+    password: "changeme123",
   };
  
   /* ===================== STATE ===================== */
@@ -786,7 +795,9 @@ a{color:inherit;text-decoration:none;}
  
   let simInterval = null;    // demo-mode fake data loop
   let mqttClient = null;     // real-mode MQTT.js client (connects straight to HiveMQ)
- 
+  let lastDeviceMessageAt = 0; // timestamp of the last real status message FROM THE ESP32 ITSELF
+  const DEVICE_OFFLINE_TIMEOUT_MS = 3000; // ESP32 publishes every 0.5s — 3s of silence = actually offline
+
   const TOPIC_STATUS       = "shoe-dryer/" + CONFIG.DEVICE_ID + "/status";
   const TOPIC_COMMAND      = "shoe-dryer/" + CONFIG.DEVICE_ID + "/command";
   const TOPIC_NOTIFICATION = "shoe-dryer/" + CONFIG.DEVICE_ID + "/notification";
@@ -835,12 +846,23 @@ a{color:inherit;text-decoration:none;}
   /* ===================== AUTH ===================== */
   el("loginForm").addEventListener("submit", function(e){
     e.preventDefault();
+    const email = el("loginEmail").value.trim().toLowerCase();
+    const password = el("loginPassword").value;
+    const errBox = el("loginError");
+
+    if(email !== AUTH.email.toLowerCase() || password !== AUTH.password){
+      errBox.textContent = "Incorrect email or password.";
+      errBox.classList.remove("hidden");
+      return;
+    }
+    errBox.classList.add("hidden");
+
     el("loginScreen").classList.add("hidden");
     el("app").classList.add("active");
     try{
       goToPage("dashboard");
       startApp();
-      setTimeout(()=>showToast("Welcome back, Jane 👋"), 600);
+      setTimeout(()=>showToast("Welcome back 👋"), 600);
     }catch(err){
       console.error("Startup error:", err);
     }
@@ -864,6 +886,8 @@ a{color:inherit;text-decoration:none;}
   el("logoutBtn").addEventListener("click", function(){
     el("app").classList.remove("active");
     el("loginScreen").classList.remove("hidden");
+    el("loginForm").reset();
+    el("loginError").classList.add("hidden");
     stopApp();
   });
  
@@ -1219,13 +1243,21 @@ a{color:inherit;text-decoration:none;}
       simInterval = setInterval(tick, 1000);
     } else {
       connectMqtt();
-      // keep "Last Update" ticking and the UI fresh even between messages
-      simInterval = setInterval(()=>{ state.lastUpdateSeconds++; render(); }, 1000);
+      // keep "Last Update" ticking and the UI fresh even between messages,
+      // and detect a genuinely offline device (not just a dropped browser<->broker link)
+      simInterval = setInterval(()=>{
+        state.lastUpdateSeconds++;
+        if(state.online && lastDeviceMessageAt && (Date.now() - lastDeviceMessageAt > DEVICE_OFFLINE_TIMEOUT_MS)){
+          state.online = false;
+        }
+        render();
+      }, 1000);
     }
   }
   function stopApp(){
     clearInterval(simInterval);
     simInterval = null;
+    lastDeviceMessageAt = 0;
     if(mqttClient){ mqttClient.end(true); mqttClient = null; }
   }
  
@@ -1275,6 +1307,7 @@ a{color:inherit;text-decoration:none;}
       if(msg.status) state.status = msg.status;
       state.online = true;
       state.lastUpdateSeconds = 0;
+      lastDeviceMessageAt = Date.now();
  
       state.tempSeries.push({t: Date.now(), v: state.temperature});
       if(state.tempSeries.length > 24) state.tempSeries.shift();
