@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -530,10 +529,6 @@ a{color:inherit;text-decoration:none;}
             </div>
           </div>
  
-          <div class="dryer-sub-stats">
-            <div class="sub-stat"><div class="v" id="subTemp">—</div><div class="l">Temperature</div></div>
-            <div class="sub-stat"><div class="v" id="subHumidity">—</div><div class="l">Humidity</div></div>
-          </div>
  
           <div class="controls-row" id="controlsRow"></div>
  
@@ -1109,11 +1104,11 @@ a{color:inherit;text-decoration:none;}
     const tempText = hasData ? state.temperature.toFixed(1)+"°C" : "--°C";
     const humText = hasData ? Math.round(state.humidity)+"%" : "--%";
  
-    [el("subTemp"), el("tempCardValue"), el("tempPageValue")].forEach(elm=>{
+    [el("tempCardValue"), el("tempPageValue")].forEach(elm=>{
       elm.textContent = tempText;
       elm.classList.toggle("stat-unavailable", !hasData);
     });
-    [el("subHumidity"), el("humCardValue"), el("humPageValue")].forEach(elm=>{
+    [el("humCardValue"), el("humPageValue")].forEach(elm=>{
       elm.textContent = humText;
       elm.classList.toggle("stat-unavailable", !hasData);
     });
