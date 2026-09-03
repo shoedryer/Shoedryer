@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -409,10 +410,11 @@ a{color:inherit;text-decoration:none;}
     <h1 class="auth-title" style="font-size:19px;">Create Account</h1>
     <p class="auth-sub">Join Smart Shoe Dryer</p>
     <form id="registerForm">
-      <div class="field"><label>Name</label><input type="text" placeholder="Your name" required></div>
-      <div class="field"><label>Email</label><input type="email" placeholder="you@example.com" required></div>
-      <div class="field"><label>Password</label><input type="password" placeholder="••••••••" required></div>
-      <div class="field"><label>Confirm Password</label><input type="password" placeholder="••••••••" required></div>
+      <div class="field"><label>Name</label><input type="text" id="regName" placeholder="Your name" required></div>
+      <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com" required></div>
+      <div class="field"><label>Password</label><input type="password" id="regPassword" placeholder="••••••••" required></div>
+      <div class="field"><label>Confirm Password</label><input type="password" id="regConfirmPassword" placeholder="••••••••" required></div>
+      <div id="registerError" class="hidden" style="color:var(--red);font-size:12.5px;font-weight:600;margin:-8px 0 14px;"></div>
       <button type="submit" class="btn btn-primary btn-block">Create Account</button>
     </form>
     <a class="link-muted" href="#" id="goLogin">Already have an account? <b>Log in</b></a>
@@ -760,14 +762,31 @@ a{color:inherit;text-decoration:none;}
     MQTT_PASSWORD: "testtest",                           // fill in
     DEVICE_ID: "shoe-dryer-001",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
   };
-
-  // Login check — this runs in the browser, so it's a convenience gate, not real security
-  // (anyone who reads the page source can see these values). Change them to your own.
-  // If you need real security later, this needs a backend to check credentials instead.
-  const AUTH = {
-    email: "eiei@gmail.com",
-    password: "eieieiei",
-  };
+ 
+  // Account storage — this site is deployed for real (Vercel), not a Claude
+  // preview, so localStorage works and actually persists in this browser.
+  // NOTE: still not "real" security — passwords sit in plain text in the
+  // browser's storage. Fine for a personal/family project; if this needs to
+  // work across multiple devices or be properly secure, it needs a real
+  // backend with a database instead.
+  const USERS_KEY = "shoeDryerUsers";
+ 
+  function loadUsers(){
+    try{
+      const raw = localStorage.getItem(USERS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(err){ return []; }
+  }
+  function saveUsers(users){
+    try{ localStorage.setItem(USERS_KEY, JSON.stringify(users)); }catch(err){}
+  }
+  // seed a default admin account the first time this loads in a browser
+  (function seedDefaultAccount(){
+    const users = loadUsers();
+    if(users.length === 0){
+      saveUsers([{ name: "Admin", email: "admin@shoedryer.local", password: "changeme123" }]);
+    }
+  })();
  
   /* ===================== STATE ===================== */
   const TOTAL_TIME = 1800; // fixed 30 minutes, in seconds — ESP32 owns this timer
@@ -797,7 +816,7 @@ a{color:inherit;text-decoration:none;}
   let mqttClient = null;     // real-mode MQTT.js client (connects straight to HiveMQ)
   let lastDeviceMessageAt = 0; // timestamp of the last real status message FROM THE ESP32 ITSELF
   const DEVICE_OFFLINE_TIMEOUT_MS = 3000; // ESP32 publishes every 0.5s — 3s of silence = actually offline
-
+ 
   const TOPIC_STATUS       = "shoe-dryer/" + CONFIG.DEVICE_ID + "/status";
   const TOPIC_COMMAND      = "shoe-dryer/" + CONFIG.DEVICE_ID + "/command";
   const TOPIC_NOTIFICATION = "shoe-dryer/" + CONFIG.DEVICE_ID + "/notification";
@@ -849,26 +868,57 @@ a{color:inherit;text-decoration:none;}
     const email = el("loginEmail").value.trim().toLowerCase();
     const password = el("loginPassword").value;
     const errBox = el("loginError");
-
-    if(email !== AUTH.email.toLowerCase() || password !== AUTH.password){
+ 
+    const users = loadUsers();
+    const match = users.find(u => u.email.toLowerCase() === email && u.password === password);
+ 
+    if(!match){
       errBox.textContent = "Incorrect email or password.";
       errBox.classList.remove("hidden");
       return;
     }
     errBox.classList.add("hidden");
-
+ 
     el("loginScreen").classList.add("hidden");
     el("app").classList.add("active");
     try{
       goToPage("dashboard");
       startApp();
-      setTimeout(()=>showToast("Welcome back 👋"), 600);
+      setTimeout(()=>showToast("Welcome back, " + (match.name || "there") + " 👋"), 600);
     }catch(err){
       console.error("Startup error:", err);
     }
   });
   el("registerForm").addEventListener("submit", function(e){
     e.preventDefault();
+    const name = el("regName").value.trim();
+    const email = el("regEmail").value.trim().toLowerCase();
+    const password = el("regPassword").value;
+    const confirmPassword = el("regConfirmPassword").value;
+    const errBox = el("registerError");
+ 
+    if(password !== confirmPassword){
+      errBox.textContent = "Passwords don't match.";
+      errBox.classList.remove("hidden");
+      return;
+    }
+    if(password.length < 6){
+      errBox.textContent = "Password must be at least 6 characters.";
+      errBox.classList.remove("hidden");
+      return;
+    }
+    const users = loadUsers();
+    if(users.some(u => u.email.toLowerCase() === email)){
+      errBox.textContent = "An account with this email already exists.";
+      errBox.classList.remove("hidden");
+      return;
+    }
+    errBox.classList.add("hidden");
+ 
+    users.push({ name, email, password });
+    saveUsers(users);
+ 
+    el("registerForm").reset();
     el("registerScreen").classList.add("hidden");
     el("loginScreen").classList.remove("hidden");
     showToast("Account created — please log in", ICON_CHECK);
@@ -877,11 +927,13 @@ a{color:inherit;text-decoration:none;}
     e.preventDefault();
     el("loginScreen").classList.add("hidden");
     el("registerScreen").classList.remove("hidden");
+    el("loginError").classList.add("hidden");
   });
   el("goLogin").addEventListener("click", function(e){
     e.preventDefault();
     el("registerScreen").classList.add("hidden");
     el("loginScreen").classList.remove("hidden");
+    el("registerError").classList.add("hidden");
   });
   el("logoutBtn").addEventListener("click", function(){
     el("app").classList.remove("active");
