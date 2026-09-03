@@ -177,8 +177,8 @@ a{color:inherit;text-decoration:none;}
 /* ---------- Main dryer card ---------- */
 .dryer-card{padding:26px;position:relative;overflow:hidden;}
 .dryer-card::before{
-  content:"";position:absolute;top:-60px;right:-60px;width:220px;height:220px;
-  background:radial-gradient(circle, rgba(255,193,7,.16), transparent 70%);
+  content:"";position:absolute;top:0;right:0;width:160px;height:160px;
+  background:radial-gradient(circle at top right, rgba(255,193,7,.16), transparent 70%);
   pointer-events:none;
 }
 .dryer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;}
@@ -203,7 +203,8 @@ a{color:inherit;text-decoration:none;}
  
 .dryer-sub-stats{display:flex;justify-content:center;gap:34px;margin:6px 0 22px;}
 .sub-stat{text-align:center;}
-.sub-stat .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;}
+.sub-stat .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;transition:opacity .2s, color .2s;}
+.sub-stat .v.stat-unavailable{color:#c4c4bd;font-weight:600;}
 .sub-stat .l{font-size:11px;color:#9a9a95;font-weight:500;margin-top:2px;}
  
 .controls-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
@@ -1104,16 +1105,28 @@ a{color:inherit;text-decoration:none;}
  
     updateRing();
  
+    const hasData = state.online;
+    const tempText = hasData ? state.temperature.toFixed(1)+"°C" : "--°C";
+    const humText = hasData ? Math.round(state.humidity)+"%" : "--%";
+ 
+    [el("subTemp"), el("tempCardValue"), el("tempPageValue")].forEach(elm=>{
+      elm.textContent = tempText;
+      elm.classList.toggle("stat-unavailable", !hasData);
+    });
+    [el("subHumidity"), el("humCardValue"), el("humPageValue")].forEach(elm=>{
+      elm.textContent = humText;
+      elm.classList.toggle("stat-unavailable", !hasData);
+    });
+ 
     const tc = tempCategory(state.temperature);
-    el("subTemp").textContent = state.temperature.toFixed(1)+"°C";
-    el("subHumidity").textContent = Math.round(state.humidity)+"%";
-    el("tempCardValue").textContent = state.temperature.toFixed(1)+"°C";
-    el("humCardValue").textContent = Math.round(state.humidity)+"%";
-    el("tempPageValue").textContent = state.temperature.toFixed(1)+"°C";
-    el("humPageValue").textContent = Math.round(state.humidity)+"%";
     [el("tempStatusTag"), el("tempPageTag")].forEach(tag=>{
-      tag.innerHTML = `<span class="dot" style="background:${tc.color}"></span> ${tc.label}`;
-      tag.style.color = tc.color;
+      if(hasData){
+        tag.innerHTML = `<span class="dot" style="background:${tc.color}"></span> ${tc.label}`;
+        tag.style.color = tc.color;
+      } else {
+        tag.innerHTML = `<span class="dot" style="background:#c4c4bd"></span> No data`;
+        tag.style.color = "#9a9a95";
+      }
     });
  
     // safety
