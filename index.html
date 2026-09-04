@@ -206,7 +206,7 @@ a{color:inherit;text-decoration:none;}
 .sub-stat .v.stat-unavailable{color:#c4c4bd;font-weight:600;}
 .sub-stat .l{font-size:11px;color:#9a9a95;font-weight:500;margin-top:2px;}
  
-.controls-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.controls-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;min-height:52px;align-items:center;}
 .ctrl-btn{flex:1;min-width:120px;max-width:170px;padding:14px 18px;font-size:14.5px;}
 .ctrl-icon-btn svg{width:16px;height:16px;}
  
@@ -754,11 +754,11 @@ a{color:inherit;text-decoration:none;}
     DEMO_MODE: false,                                             // true = fake data in-browser · false = connect to real HiveMQ/ESP32
     MQTT_HOST: "00dbe25634fc4525af4192273723e80b.s1.eu.hivemq.cloud", // your HiveMQ Cluster URL, no wss:// prefix
     MQTT_PORT: 8884,                                              // HiveMQ Cloud's WebSocket TLS port (fixed)
-    MQTT_USERNAME: "test",                           // fill in — separate credential for the website, see chat
-    MQTT_PASSWORD: "testtest",                           // fill in
-    DEVICE_ID: "shoe-dryer-001",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
+    MQTT_USERNAME: "WEB_MQTT_USERNAME",                           // fill in — separate credential for the website, see chat
+    MQTT_PASSWORD: "WEB_MQTT_PASSWORD",                           // fill in
+    DEVICE_ID: "dryer01",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
   };
- 
+
   // Account storage — this site is deployed for real (Vercel), not a Claude
   // preview, so localStorage works and actually persists in this browser.
   // NOTE: still not "real" security — passwords sit in plain text in the
@@ -766,7 +766,7 @@ a{color:inherit;text-decoration:none;}
   // work across multiple devices or be properly secure, it needs a real
   // backend with a database instead.
   const USERS_KEY = "shoeDryerUsers";
- 
+
   function loadUsers(){
     try{
       const raw = localStorage.getItem(USERS_KEY);
@@ -812,7 +812,7 @@ a{color:inherit;text-decoration:none;}
   let mqttClient = null;     // real-mode MQTT.js client (connects straight to HiveMQ)
   let lastDeviceMessageAt = 0; // timestamp of the last real status message FROM THE ESP32 ITSELF
   const DEVICE_OFFLINE_TIMEOUT_MS = 3000; // ESP32 publishes every 0.5s — 3s of silence = actually offline
- 
+
   const TOPIC_STATUS       = "shoe-dryer/" + CONFIG.DEVICE_ID + "/status";
   const TOPIC_COMMAND      = "shoe-dryer/" + CONFIG.DEVICE_ID + "/command";
   const TOPIC_NOTIFICATION = "shoe-dryer/" + CONFIG.DEVICE_ID + "/notification";
@@ -864,17 +864,17 @@ a{color:inherit;text-decoration:none;}
     const email = el("loginEmail").value.trim().toLowerCase();
     const password = el("loginPassword").value;
     const errBox = el("loginError");
- 
+
     const users = loadUsers();
     const match = users.find(u => u.email.toLowerCase() === email && u.password === password);
- 
+
     if(!match){
       errBox.textContent = "Incorrect email or password.";
       errBox.classList.remove("hidden");
       return;
     }
     errBox.classList.add("hidden");
- 
+
     el("loginScreen").classList.add("hidden");
     el("app").classList.add("active");
     try{
@@ -892,7 +892,7 @@ a{color:inherit;text-decoration:none;}
     const password = el("regPassword").value;
     const confirmPassword = el("regConfirmPassword").value;
     const errBox = el("registerError");
- 
+
     if(password !== confirmPassword){
       errBox.textContent = "Passwords don't match.";
       errBox.classList.remove("hidden");
@@ -910,10 +910,10 @@ a{color:inherit;text-decoration:none;}
       return;
     }
     errBox.classList.add("hidden");
- 
+
     users.push({ name, email, password });
     saveUsers(users);
- 
+
     el("registerForm").reset();
     el("registerScreen").classList.add("hidden");
     el("loginScreen").classList.remove("hidden");
@@ -968,7 +968,12 @@ a{color:inherit;text-decoration:none;}
     return {idle:"IDLE", running:"RUNNING", paused:"PAUSED", finished:"FINISHED", offline:"OFFLINE"}[s];
   }
  
+  let lastControlsSignature = null;
   function renderControls(){
+    const signature = state.online + "|" + state.status;
+    if(signature === lastControlsSignature) return; // nothing changed — don't rebuild the buttons
+    lastControlsSignature = signature;
+
     const row = el("controlsRow");
     row.innerHTML = "";
     const mk = (cls, label, iconSvg, handler, extra)=>{
@@ -1103,7 +1108,7 @@ a{color:inherit;text-decoration:none;}
     const hasData = state.online;
     const tempText = hasData ? state.temperature.toFixed(1)+"°C" : "--°C";
     const humText = hasData ? Math.round(state.humidity)+"%" : "--%";
- 
+
     [el("tempCardValue"), el("tempPageValue")].forEach(elm=>{
       elm.textContent = tempText;
       elm.classList.toggle("stat-unavailable", !hasData);
@@ -1112,7 +1117,7 @@ a{color:inherit;text-decoration:none;}
       elm.textContent = humText;
       elm.classList.toggle("stat-unavailable", !hasData);
     });
- 
+
     const tc = tempCategory(state.temperature);
     [el("tempStatusTag"), el("tempPageTag")].forEach(tag=>{
       if(hasData){
