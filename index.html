@@ -455,8 +455,8 @@ a{color:inherit;text-decoration:none;}
     <div class="sidebar-foot">
       <div class="status-pill"><span class="dot dot-green pulse" id="sideDot"></span><span id="sideStatusText">Device Online</span></div>
       <div class="user-row">
-        <div class="avatar">JD</div>
-        <div style="font-size:12.5px;font-weight:600;">Jane Doe</div>
+        <div class="avatar" id="sidebarAvatar">?</div>
+        <div style="font-size:12.5px;font-weight:600;" id="sidebarUserName">—</div>
       </div>
     </div>
   </aside>
@@ -703,8 +703,8 @@ a{color:inherit;text-decoration:none;}
       <div class="card settings-section fadein">
         <h4>Account</h4>
         <p class="sec-desc">Your personal information</p>
-        <div class="settings-field"><div class="lbl">Name</div><input type="text" value="Jane Doe"></div>
-        <div class="settings-field"><div class="lbl">Email</div><input type="email" value="user@example.com"></div>
+        <div class="settings-field"><div class="lbl">Name</div><input type="text" id="accountNameField" value="" disabled style="opacity:.6;"></div>
+        <div class="settings-field"><div class="lbl">Email</div><input type="email" id="accountEmailField" value="" disabled style="opacity:.6;"></div>
         <div class="settings-field"><div class="lbl">Password</div><input type="password" value="••••••••"></div>
         <div class="settings-field">
           <div class="lbl">Log out of your account</div>
@@ -754,9 +754,9 @@ a{color:inherit;text-decoration:none;}
     DEMO_MODE: false,                                             // true = fake data in-browser · false = connect to real HiveMQ/ESP32
     MQTT_HOST: "00dbe25634fc4525af4192273723e80b.s1.eu.hivemq.cloud", // your HiveMQ Cluster URL, no wss:// prefix
     MQTT_PORT: 8884,                                              // HiveMQ Cloud's WebSocket TLS port (fixed)
-    MQTT_USERNAME: "WEB_MQTT_USERNAME",                           // fill in — separate credential for the website, see chat
-    MQTT_PASSWORD: "WEB_MQTT_PASSWORD",                           // fill in
-    DEVICE_ID: "dryer01",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
+    MQTT_USERNAME: "test",                           // fill in — separate credential for the website, see chat
+    MQTT_PASSWORD: "testtestD",                           // fill in
+    DEVICE_ID: "shoe-dryer-001",                                         // must exactly match DEVICE_ID in the ESP32's secrets.h
   };
 
   // Account storage — this site is deployed for real (Vercel), not a Claude
@@ -875,12 +875,19 @@ a{color:inherit;text-decoration:none;}
     }
     errBox.classList.add("hidden");
 
+    const displayName = match.name && match.name.trim() ? match.name.trim() : match.email;
+    const initials = displayName.split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+    el("sidebarUserName").textContent = displayName;
+    el("sidebarAvatar").textContent = initials || "?";
+    el("accountNameField").value = match.name || "";
+    el("accountEmailField").value = match.email;
+
     el("loginScreen").classList.add("hidden");
     el("app").classList.add("active");
     try{
       goToPage("dashboard");
       startApp();
-      setTimeout(()=>showToast("Welcome back, " + (match.name || "there") + " 👋"), 600);
+      setTimeout(()=>showToast("Welcome back, " + displayName + " 👋"), 600);
     }catch(err){
       console.error("Startup error:", err);
     }
