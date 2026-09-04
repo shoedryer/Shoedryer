@@ -473,25 +473,14 @@ a{color:inherit;text-decoration:none;}
       <div class="navbar-right">
         <button class="bell-btn" id="bellBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="bell-badge" id="bellBadge">3</span>
+          <span class="bell-badge hidden" id="bellBadge">0</span>
         </button>
       </div>
     </div>
  
     <div id="notifPanel" class="notif-panel hidden">
       <div class="notif-panel-head">Notifications</div>
-      <div class="notif-item">
-        <div class="dotwrap"><span class="dot" style="background:var(--yellow)"></span></div>
-        <div class="txt"><div class="t">Drying completed</div><div class="time">5 minutes ago</div></div>
-      </div>
-      <div class="notif-item">
-        <div class="dotwrap"><span class="dot dot-green"></span></div>
-        <div class="txt"><div class="t">Dryer started</div><div class="time">35 minutes ago</div></div>
-      </div>
-      <div class="notif-item">
-        <div class="dotwrap"><span class="dot dot-red"></span></div>
-        <div class="txt"><div class="t">Device disconnected</div><div class="time">2 hours ago</div></div>
-      </div>
+      <div id="notifList"></div>
     </div>
  
     <!-- PAGE: DASHBOARD -->
@@ -784,6 +773,62 @@ a{color:inherit;text-decoration:none;}
       saveUsers([{ name: "Admin", email: "admin@shoedryer.local", password: "changeme123" }]);
     }
   })();
+
+  // ----- Drying history — built from real cycles, not sample data -----
+  // Persisted per-device in localStorage so it survives a page refresh in
+  // this browser (there's no backend database, so it won't sync across
+  // devices/browsers — only this dashboard's own local storage).
+  const HISTORY_KEY = "shoeDryerHistory_" + CONFIG.DEVICE_ID;
+  function loadHistory(){
+    try{
+      const raw = localStorage.getItem(HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(err){ return []; }
+  }
+  function saveHistory(list){
+    try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); }catch(err){}
+  }
+  function addHistoryEntry(entry){
+    history.unshift(entry);
+    if(history.length > 100) history.length = 100;
+    saveHistory(history);
+    renderHistory();
+  }
+
+  // ----- Notifications — logged live from real MQTT events, session-only -----
+  // (Not persisted: a fresh page load starts with an empty bell, since
+  // there's no backend to store a proper read/unread inbox in.)
+  let notifications = [];
+  function formatRelativeTime(ts){
+    const diffSec = Math.floor((Date.now() - ts) / 1000);
+    if(diffSec < 60) return "Just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if(diffMin < 60) return diffMin + " minute" + (diffMin===1?"":"s") + " ago";
+    const diffHr = Math.floor(diffMin / 60);
+    if(diffHr < 24) return diffHr + " hour" + (diffHr===1?"":"s") + " ago";
+    const diffDay = Math.floor(diffHr / 24);
+    return diffDay + " day" + (diffDay===1?"":"s") + " ago";
+  }
+  function addNotification(text, dotClass){
+    notifications.unshift({ text, ts: Date.now(), dotClass: dotClass || "dot-green", read: false });
+    if(notifications.length > 30) notifications.length = 30;
+    renderNotifications();
+  }
+  function renderNotifications(){
+    const list = el("notifList");
+    if(!list) return;
+    list.innerHTML = notifications.length
+      ? notifications.map(n => `
+        <div class="notif-item">
+          <div class="dotwrap"><span class="dot ${n.dotClass}"></span></div>
+          <div class="txt"><div class="t">${n.text}</div><div class="time">${formatRelativeTime(n.ts)}</div></div>
+        </div>`).join("")
+      : `<div class="notif-item"><div class="txt"><div class="t" style="color:#9a9a95;font-weight:500;">No notifications yet</div></div></div>`;
+    const badge = el("bellBadge");
+    const unread = notifications.filter(n => !n.read).length;
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+    badge.classList.toggle("hidden", unread === 0);
+  }
  
   /* ===================== STATE ===================== */
   const TOTAL_TIME = 1800; // fixed 30 minutes, in seconds — ESP32 owns this timer
@@ -801,18 +846,17 @@ a{color:inherit;text-decoration:none;}
     range: "10",
   };
  
-  let history = [
-    {date:"Aug 31", duration:"30 min", temp:"42.5°C", status:"Completed"},
-    {date:"Aug 30", duration:"20 min", temp:"40.8°C", status:"Completed"},
-    {date:"Aug 29", duration:"30 min", temp:"43.2°C", status:"Stopped"},
-    {date:"Aug 28", duration:"30 min", temp:"41.1°C", status:"Completed"},
-    {date:"Aug 27", duration:"10 min", temp:"36.4°C", status:"Cancelled"},
-  ];
- 
+  let history = loadHistory(); // real cycles only — empty until the dryer actually finishes/stops a run
+
   let simInterval = null;    // demo-mode fake data loop
   let mqttClient = null;     // real-mode MQTT.js client (connects straight to HiveMQ)
   let lastDeviceMessageAt = 0; // timestamp of the last real status message FROM THE ESP32 ITSELF
   const DEVICE_OFFLINE_TIMEOUT_MS = 3000; // ESP32 publishes every 0.5s — 3s of silence = actually offline
+
+  // Tracks the currently in-progress cycle so we can log a real history row
+  // (start time + peak temperature) once it ends.
+  let currentCycle = null; // { startedAt, maxTemp } | null
+  let dryingCompletedSignal = false; // true briefly after a "drying_complete" notification, so a Stopped-vs-Completed history row can be told apart
 
   const TOPIC_STATUS       = "shoe-dryer/" + CONFIG.DEVICE_ID + "/status";
   const TOPIC_COMMAND      = "shoe-dryer/" + CONFIG.DEVICE_ID + "/command";
@@ -950,7 +994,12 @@ a{color:inherit;text-decoration:none;}
   /* ===================== NOTIFICATIONS ===================== */
   el("bellBtn").addEventListener("click", function(e){
     e.stopPropagation();
-    el("notifPanel").classList.toggle("hidden");
+    const panel = el("notifPanel");
+    panel.classList.toggle("hidden");
+    if(!panel.classList.contains("hidden")){
+      notifications.forEach(n => n.read = true);
+      renderNotifications();
+    }
   });
   document.addEventListener("click", function(e){
     if(!el("notifPanel").contains(e.target) && e.target!==el("bellBtn")){
@@ -1321,7 +1370,7 @@ a{color:inherit;text-decoration:none;}
       simInterval = setInterval(()=>{
         state.lastUpdateSeconds++;
         if(state.online && lastDeviceMessageAt && (Date.now() - lastDeviceMessageAt > DEVICE_OFFLINE_TIMEOUT_MS)){
-          state.online = false;
+          markOffline();
         }
         render();
       }, 1000);
@@ -1335,6 +1384,12 @@ a{color:inherit;text-decoration:none;}
   }
  
   /* ===================== REAL MODE — MQTT.js ↔ HiveMQ Cloud (direct, no backend) ===================== */
+  function markOffline(){
+    if(state.online){
+      state.online = false;
+      addNotification("Device disconnected", "dot-red");
+    }
+  }
   function connectMqtt(){
     if(typeof mqtt === "undefined"){
       console.error("mqtt.js failed to load");
@@ -1364,23 +1419,57 @@ a{color:inherit;text-decoration:none;}
       try{ msg = JSON.parse(payload.toString()); }catch(err){ return; }
  
       if(topic === TOPIC_NOTIFICATION){
-        if(msg.type === "drying_complete"){ showToast("Drying complete — shoes are ready! 🔔", ICON_CHECK); }
-        else if(msg.type === "high_temperature"){ showToast("Stopped automatically: over safety limit", ICON_WARN); }
-        else if(msg.type === "drying_started"){ showToast("Drying started · 30 min cycle", ICON_CHECK); }
+        if(msg.type === "drying_complete"){
+          showToast("Drying complete — shoes are ready! 🔔", ICON_CHECK);
+          addNotification("Drying completed", "dot-green");
+          dryingCompletedSignal = true;
+          setTimeout(()=>{ dryingCompletedSignal = false; }, 10000);
+        }
+        else if(msg.type === "high_temperature"){
+          showToast("Stopped automatically: over safety limit", ICON_WARN);
+          addNotification("Stopped automatically — temperature exceeded safety limit", "dot-red");
+        }
+        else if(msg.type === "drying_started"){
+          showToast("Drying started · 30 min cycle", ICON_CHECK);
+          addNotification("Dryer started", "dot-green");
+        }
         return;
       }
  
       if(topic !== TOPIC_STATUS) return;
       if(msg.deviceId && msg.deviceId !== CONFIG.DEVICE_ID) return; // ignore other devices
  
+      const prevStatus = state.status;
+
       if(typeof msg.temperature === "number") state.temperature = msg.temperature;
       if(typeof msg.humidity === "number") state.humidity = msg.humidity;
       if(typeof msg.remaining === "number") state.remaining = msg.remaining;
       if(typeof msg.wifi === "number") state.wifi = Math.max(0, Math.min(100, 100 + msg.wifi)); // rough RSSI(dBm) -> %
       if(msg.status) state.status = msg.status;
+      if(!state.online){ addNotification("Device reconnected", "dot-green"); }
       state.online = true;
       state.lastUpdateSeconds = 0;
       lastDeviceMessageAt = Date.now();
+
+      // ----- Cycle tracking → real drying history rows -----
+      if(prevStatus !== "running" && state.status === "running"){
+        currentCycle = { startedAt: Date.now(), maxTemp: state.temperature };
+      }
+      if(currentCycle && (state.status === "running" || state.status === "paused")){
+        currentCycle.maxTemp = Math.max(currentCycle.maxTemp, state.temperature);
+      }
+      if(currentCycle && (prevStatus === "running" || prevStatus === "paused") &&
+         (state.status === "idle" || state.status === "finished")){
+        const durationMin = Math.max(1, Math.round((Date.now() - currentCycle.startedAt) / 60000));
+        const outcome = (state.status === "finished" || dryingCompletedSignal) ? "Completed" : "Stopped";
+        addHistoryEntry({
+          date: new Date().toLocaleDateString(undefined, {month:"short", day:"numeric"}),
+          duration: durationMin + " min",
+          temp: currentCycle.maxTemp.toFixed(1) + "°C",
+          status: outcome,
+        });
+        currentCycle = null;
+      }
  
       state.tempSeries.push({t: Date.now(), v: state.temperature});
       if(state.tempSeries.length > 24) state.tempSeries.shift();
@@ -1394,7 +1483,7 @@ a{color:inherit;text-decoration:none;}
     });
  
     mqttClient.on("close", () => {
-      state.online = false;
+      markOffline();
       render();
     });
  
@@ -1411,6 +1500,7 @@ a{color:inherit;text-decoration:none;}
  
   /* ===================== INIT ===================== */
   renderHistory();
+  renderNotifications();
   window.addEventListener("resize", ()=>{ if(chart1) chart1.resize(); if(chart2) chart2.resize(); });
 })();
 </script>
